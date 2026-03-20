@@ -6,11 +6,17 @@ import org.springframework.http.HttpMethod;
 import org.springframework.security.config.Customizer;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
+import org.springframework.security.core.GrantedAuthority;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
+import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationConverter;
+import org.springframework.security.oauth2.server.resource.authentication.JwtGrantedAuthoritiesConverter;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 
+import java.util.ArrayList;
+import java.util.Collection;
 import java.util.List;
 
 @Configuration
@@ -23,12 +29,41 @@ public class SecurityConfig {
                 .authorizeHttpRequests((authorize) -> authorize
                         .requestMatchers(HttpMethod.GET, "/resource/**").hasAuthority("SCOPE_read")
                         .requestMatchers(HttpMethod.POST, "/resource/**").hasAuthority("SCOPE_write")
+                        .requestMatchers("/v1/api/admin/**").hasRole("ADMIN")
                         .anyRequest().authenticated()
                 )
-                .oauth2ResourceServer((oauth2) -> oauth2.jwt(Customizer.withDefaults()));
+                .oauth2ResourceServer((oauth2) ->
+                        oauth2.jwt(jwt-> jwt.jwtAuthenticationConverter(this.jwtAuthenticationConverter())));
+
+
         return http.build();
     }
 
+    @Bean
+    public JwtAuthenticationConverter jwtAuthenticationConverter() {
+        JwtGrantedAuthoritiesConverter scopesConverter = new JwtGrantedAuthoritiesConverter();
+
+        scopesConverter.setAuthorityPrefix("SCOPE_");
+        scopesConverter.setAuthoritiesClaimName("scope");
+
+        JwtAuthenticationConverter converter = new JwtAuthenticationConverter();
+
+        converter.setJwtGrantedAuthoritiesConverter(jwt -> {
+            Collection<GrantedAuthority> authorities = new ArrayList<>(scopesConverter.convert(jwt));
+
+            List<String> roles = jwt.getClaimAsStringList("roles");
+
+            if (roles != null) {
+                roles.forEach(role ->
+                        authorities.add(new SimpleGrantedAuthority(role)));
+            }
+
+            return authorities;
+
+        });
+
+        return converter;
+    }
 
     @Bean
     public CorsConfigurationSource corsConfigurationSource() {
